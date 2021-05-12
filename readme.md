@@ -1,110 +1,112 @@
-# 签发认证系统文档
+# 说明文档
 
-## 环境配置
+### 环境
 
-1. 配置MySQL环境；
+django, pyhanko
 
-2. 为Django项目配置虚拟环境，安装依赖包：django，mysqlclient，pyopenssl。配置setting.py数据库信息（DATABASE），之后执行迁库操作；
+### 配置
 
-3. 安装MyPDFSigner https://www.kryptokoder.com/MyPDFSigner-3.1.5-1-x86_64.exe，将环境变量添加到Python变量之前；
+##### 根目录
 
-4. 编辑MyPDFSigner配置文件pypdfsigner.conf：
+pyhanko.yml中可新建样式，可以更改签名印章，字体，文字信息；
+p.p12为你的pkcs12证书；
+password保存您pkcs12证书的私钥密码；
+xxx.png为要使用的签名印章。
 
-   ```
-   certstore=PKCS12 KEYSTORE FILE
-   certfile=/Applications/MyPDFSigner.app/Contents/Home/tests/mypdfsigner-test.p12
-   certpasswd=47cabdb7b2b2dcc416a21cd0c4b6903e
-   subfilter=ETSI.CAdES.detached
-   sigrect=[-170 -80 -40 -40]
-   sigimage=/Applications/MyPDFSigner.app/Contents/Home/tests/signature.png
-   tsaurl=http://adobe-timestamp.geotrust.com/tsa
-   ```
+##### view.py(路径表达方式取决于系统)
 
-   准备好你的PKCS#12证书（第三方提供或者本机生成，方法略）、证书密码、签名图像（仅png格式）。将他们的路径赋值给certfile、certpasswd、sigimage。sigrect用于标记签名位置。详见https://www.kryptokoder.com/manual.html。
-   
-5. 配置Django项目中views.py的文件路径。更改：
-   
-   in_file_path：保存待加签文件的路径
-   
-   in_file_name：待加签文件名
-   
-   out_file_path：加签文件的路径
-   
-   out_file_name：加签文件名
-   
-   config_file_path：配置文件路径
-   
-   config_file_name：配置文件名
-   
-   p12_path：pkcs#12证书路径
-   
-   p12_name：pkcs#12证书名
-   
-   p12_password：pkcs#12证书密码
-   
-   temp_save_path：待验证文件临时存放位置（验证后文件自动删除）
-   
-   path格式如'C:\\\xxx\\\xxx\\\...\\\files\\\\'。name格式如'xxx.pdf'。
+```python
+in_file_path = 'file\\' # 待加签文件保存目录，文件名为[id].pdf
+out_file_path = 'file\\' # 已加签文件保存目录，文件名为[id]-signed.pdf
+sign_name = 'ypy' #为签名创建一个名字
+style_name = 'bjtu' #为签名格式创建一个名字
+p12_file = 'p.p12' #pkcs12证书存放位置
+p12_password_file = 'password' #pkcs12证书保存私钥密码文件及路径
+temp_save_path = 'file\\' #用于验证文件时临时保存文件，验证后文件删除
+serial = '0382e2fa47f0eb5461d5d46648c152b6839cf0b59b52a22b65a7e38e889af94f' #运行一次pyhanko sign validate xxx.pdf以查看序列号，暂时不清楚怎么获得这个序列号，应该可以根据pyopenssl.crypto获取，未知
+```
 
-## URL
+##### pyhanko.yml
 
-### 创建学生
+```
+stamp-styles:
+    default:
+        type: text
+        background: __stamp__
+        stamp-text: "Signed by %(signer)s\nTimestamp: %(ts)s"
+    noto-qr:
+        type: qr
+        background: background.png
+        stamp-text: "Signed by %(signer)s\nTimestamp: %(ts)s\n%(url)s"
+        text-box-style:
+            font: NotoSerif-Regular.otf
+            leading: 13
+    bjtu:
+        type: text
+        background: bjtu.png
+        stamp-text: ""
+```
 
-http://ip:port/one_app/create/
+default和noto-qr为默认样式。新建样式格式如“bjtu”，type需为text，background为印章图片的相对路径，stamp-text为根据需要添加到印章上的文本。
 
-以sid为主键，创建一个学生。
+##### 其他
 
-输入（POST）Content-Type:application/json：
+###### PKCS#12证书的生成：
+
+Linux系统下：
+1）生成私钥 $ openssl genrsa -out private.pem 1024
+2）创建证书请求 $ openssl req -new -key private.pem -out rsacert.csr
+3）生成证书并签名，有效期10年 $ openssl x509 -req -days 3650 -in rsacert.csr -signkey private.pem -out rsacert.crt
+4）将 PEM 格式文件转换成 DER 格式 $ openssl x509 -outform der -in rsacert.crt -out rsacert.der
+5）导出P12文件 $ openssl pkcs12 -export -out p.p12 -inkey private.pem -in rsacert.crt
+（来源：简书；转自https://www.jianshu.com/p/d7df3de72669；作者：Mario_ZJ）
+
+### 运行
+
+python manage.py migrations
+python manage.py makemigrate
+python manage.py runserver
+
+#### url
+
+###### /transcript/sign/
+
+输入（Content-Type:application/json）：
 
 ```json
 {
-	"name" : "小明",
-	"sid" : "18301000",
-	"iid" : "200200200001010011"
+    "id": "18301030"
 }
 ```
 
-返回值：
+输出（文件）：
 
-```json
-{
-    "msg": "test"
-}
+```
+<Headers>
+Date →Wed, 12 May 2021 06:47:45 GMT
+Server →WSGIServer/0.2 CPython/3.6.13
+Content-Type →APPLICATION/OCTET-STREAM
+content-disposition →attachment;filename=18301030-signed.pdf
+X-Frame-Options →DENY
+X-Content-Type-Options →nosniff
+Referrer-Policy →same-origin
+Connection →close
 ```
 
-### 签发文件
+###### /transcript/validate/
 
-http://ip:port/one_app/download/
+输入（Content-Type:multipart/form-data）：
 
-请求指定学号的成绩单，生成签发后的文件。
-
-输入（GET）Content-Type:application/json：
-
-```json
-{
-    "id": "18301000"
-}
+```
+KEY:file
+VALUE:18301030-signed.pdf
 ```
 
-返回值：
-
-文件（APPLICATION/OCTET-STREAM）
-
-### 验证文件
-
-http://ip:port/one_app/verify/
-
-检查文件是否被篡改，姓名与服务器证书上是否一致。
-
-输入（POST）Content-Type:multipart/form-data：
-
-file:[发送的文件]
-
-返回值：
+输出（Content-Type:application/json）：
 
 ```json
 {
-    "msg": "succeed"(or fail)
+    "msg": "true(or false)"
 }
 ```
 
